@@ -7,39 +7,48 @@ import glob
 
 def run_analysis():
     # ---------------------------------------------------------
-    # 設定・定数（APIキー埋め込み済み）
+    # DEBUG: Show current directory and ALL files recursively
+    # ---------------------------------------------------------
+    print("--- DEBUG: START FILE SEARCH ---")
+    cwd = os.getcwd()
+    print(f"Current Working Directory: {cwd}")
+    
+    # リポジトリ内の全ファイルを表示して、画像がどこにあるか暴く
+    print("Listing all files in repository:")
+    for root, dirs, files in os.walk("."):
+        for name in files:
+            print(os.path.join(root, name))
+    print("--- DEBUG: END FILE SEARCH ---")
+
+    # ---------------------------------------------------------
+    # Settings
     # ---------------------------------------------------------
     API_KEY = "frminzlefpwosbcj"
     BASE_URL = "http://nova.astrometry.net/api"
     
     # ---------------------------------------------------------
-    # 画像ファイルの自動探索 (ここを強力にしました)
-    # starphoto で始まるファイルなら、.jpg.jpg でも .jpeg でも何でも拾います
+    # Find Image
     # ---------------------------------------------------------
     target_file = None
     
-    # 'starphoto' で始まるすべてのファイルを探すリスト
-    candidates = glob.glob("starphoto*")
-    
-    # 自分自身(pyファイル)やディレクトリを除外して画像っぽいものを探す
-    for f in candidates:
-        if f.endswith(".py"):
-            continue
-        if os.path.isdir(f):
-            continue
-        target_file = f
-        break
+    # Case-insensitive search manually
+    # (glob behavior can vary, so we check manually)
+    all_files = os.listdir(".")
+    for f in all_files:
+        lower_name = f.lower()
+        if lower_name.startswith("starphoto") and (lower_name.endswith(".jpg") or lower_name.endswith(".png") or lower_name.endswith(".jpeg")):
+            target_file = f
+            break
     
     if target_file is None:
-        # 万が一見つからない場合、カレントディレクトリのファイル一覧を表示して終了
-        print("ERROR: 'starphoto' で始まる画像ファイルが見つかりません。")
-        print("現在あるファイル一覧:", os.listdir("."))
+        print("ERROR: Could not find any file starting with 'starphoto'.")
+        # Do not use Japanese here to avoid UnicodeEncodeError
         sys.exit(1)
         
     print(f"Target Image Found: {target_file}")
 
     # ---------------------------------------------------------
-    # 1. ログイン処理
+    # 1. Login
     # ---------------------------------------------------------
     print("Step 1: Logging in...")
     try:
@@ -55,7 +64,7 @@ def run_analysis():
         sys.exit(1)
 
     # ---------------------------------------------------------
-    # 2. 画像のアップロード
+    # 2. Upload
     # ---------------------------------------------------------
     print("Step 2: Uploading image...")
     try:
@@ -78,7 +87,7 @@ def run_analysis():
         sys.exit(1)
 
     # ---------------------------------------------------------
-    # 3. 解析完了待ち
+    # 3. Wait for processing
     # ---------------------------------------------------------
     print("Step 3: Waiting for processing...")
     job_id = None
@@ -125,7 +134,7 @@ def run_analysis():
         sys.exit(1)
 
     # ---------------------------------------------------------
-    # 4. 結果の取得
+    # 4. Result
     # ---------------------------------------------------------
     print("Step 4: Fetching results...")
     try:
