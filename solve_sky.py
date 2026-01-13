@@ -143,48 +143,50 @@ def run_analysis():
         # 画像読み込み
         img_data = plt.imread(target_file)
         
-        # プロット準備 (枠線などを消して画像だけにする)
+        # プロット準備
         fig = plt.figure(figsize=(12, 12))
         ax = plt.subplot(projection=wcs)
         
         # 元画像を表示
         ax.imshow(img_data)
         
-        # グリッド線も薄く残しておく（お好みでコメントアウト可）
-        ax.coords.grid(True, color='white', ls='dotted', alpha=0.3)
+        # グリッド線を消す（または薄く残す）
+        # ax.coords.grid(True, color='white', ls='dotted', alpha=0.3) 
         
         # 星座線の描画ループ
-        # GeoJSON形式: features -> geometry -> coordinates (MultiLineString)
         line_count = 0
         
         for feature in const_data['features']:
             geometry = feature['geometry']
-            const_id = feature['id'] # 星座ID (例: Ori, UMa)
             
             if geometry['type'] == 'MultiLineString':
                 lines = geometry['coordinates']
                 
                 for line in lines:
-                    # line は [[RA, Dec], [RA, Dec], ...] のリスト
-                    # JSONデータは [RA(度), Dec(度)] の形式
                     line_array = np.array(line)
                     ra = line_array[:, 0]
                     dec = line_array[:, 1]
                     
                     # 線をプロット
-                    # transform=ax.get_transform('world') を使うと
-                    # RA/Dec の値をそのまま渡して、WCSに従って描画してくれる
                     ax.plot(ra, dec, transform=ax.get_transform('world'), 
                             color='cyan', linewidth=1.5, alpha=0.8)
                     line_count += 1
         
         print(f"Drew {line_count} constellation segments.")
 
-        # タイトルや軸ラベルを消して「写真」っぽくする
+        # --- 【修正箇所】軸ラベルの非表示設定を安全な方法に変更 ---
         ax.set_xlabel('')
         ax.set_ylabel('')
-        ax.tick_params(labelbottom=False, labelleft=False)
         
+        # tick_paramsを使わずに、coordsを使って軸ラベルを非表示にする
+        # Astropy WCSAxes の標準的な非表示方法
+        lon = ax.coords[0]
+        lat = ax.coords[1]
+        lon.set_ticklabel_visible(False)
+        lon.set_axislabel('')
+        lat.set_ticklabel_visible(False)
+        lat.set_axislabel('')
+
         # 保存
         output_filename = "annotated_result.jpg"
         plt.savefig(output_filename, dpi=150, bbox_inches='tight', pad_inches=0.05)
