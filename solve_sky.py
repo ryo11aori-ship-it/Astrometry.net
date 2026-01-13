@@ -21,7 +21,7 @@ def run_analysis():
     API_KEY = "frminzlefpwosbcj"
     BASE_URL = "http://nova.astrometry.net/api"
     
-    # 星座線データのURL (d3-celestialのオープンデータを使用)
+    # 星座線データのURL
     CONSTELLATION_JSON_URL = "https://raw.githubusercontent.com/ofrohn/d3-celestial/master/data/constellations.lines.json"
     
     # ---------------------------------------------------------
@@ -142,6 +142,8 @@ def run_analysis():
         
         # 画像読み込み
         img_data = plt.imread(target_file)
+        # 【重要】画像の高さ(h)と幅(w)を取得
+        h, w = img_data.shape[:2]
         
         # プロット準備
         fig = plt.figure(figsize=(12, 12))
@@ -150,36 +152,24 @@ def run_analysis():
         # 元画像を表示
         ax.imshow(img_data)
         
-        # グリッド線を消す（または薄く残す）
-        # ax.coords.grid(True, color='white', ls='dotted', alpha=0.3) 
-        
         # 星座線の描画ループ
         line_count = 0
-        
         for feature in const_data['features']:
             geometry = feature['geometry']
-            
             if geometry['type'] == 'MultiLineString':
                 lines = geometry['coordinates']
-                
                 for line in lines:
                     line_array = np.array(line)
                     ra = line_array[:, 0]
                     dec = line_array[:, 1]
-                    
-                    # 線をプロット
+                    # 線をプロット (WCS変換)
                     ax.plot(ra, dec, transform=ax.get_transform('world'), 
                             color='cyan', linewidth=1.5, alpha=0.8)
                     line_count += 1
         
         print(f"Drew {line_count} constellation segments.")
 
-        # --- 【修正箇所】軸ラベルの非表示設定を安全な方法に変更 ---
-        ax.set_xlabel('')
-        ax.set_ylabel('')
-        
-        # tick_paramsを使わずに、coordsを使って軸ラベルを非表示にする
-        # Astropy WCSAxes の標準的な非表示方法
+        # 軸ラベルの非表示設定 (安全な方法)
         lon = ax.coords[0]
         lat = ax.coords[1]
         lon.set_ticklabel_visible(False)
@@ -187,9 +177,17 @@ def run_analysis():
         lat.set_ticklabel_visible(False)
         lat.set_axislabel('')
 
+        # --- 【ここが今回の修正の核心】 ---
+        # 表示範囲を、画像の幅(w)と高さ(h)に強制的に固定します。
+        # これで勝手なズームアウトを防ぎます。
+        ax.set_xlim(0, w)
+        ax.set_ylim(0, h)
+        # --------------------------------
+
         # 保存
         output_filename = "annotated_result.jpg"
-        plt.savefig(output_filename, dpi=150, bbox_inches='tight', pad_inches=0.05)
+        # 余白を極限まで削って保存
+        plt.savefig(output_filename, dpi=150, bbox_inches='tight', pad_inches=0)
         
         print(f"SUCCESS: Generated '{output_filename}' with CONSTELLATION LINES!")
         
