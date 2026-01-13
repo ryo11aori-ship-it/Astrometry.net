@@ -37,9 +37,11 @@ jobs:
         Copy-Item dist\solve_sky.exe .
         .\solve_sky.exe
 
-    # 6. 【追加】生成されたexeを保存（アーティファクトとしてアップロード）
-    - name: Upload EXE Artifact
+    # 6. 結果の保存（exeファイル と 生成された星座画像 の両方を保存）
+    - name: Upload Artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: star-analysis-app
-        path: dist/solve_sky.exe
+        name: star-analysis-results
+        path: |
+          dist/solve_sky.exe
+          annotated_result.jpg
