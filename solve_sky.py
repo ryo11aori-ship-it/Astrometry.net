@@ -3,31 +3,43 @@ import json
 import time
 import os
 import sys
+import glob
 
 def run_analysis():
     # ---------------------------------------------------------
-    # 設定・定数（ご指定のAPIキーを埋め込み済み）
+    # 設定・定数（APIキー埋め込み済み）
     # ---------------------------------------------------------
     API_KEY = "frminzlefpwosbcj"
     BASE_URL = "http://nova.astrometry.net/api"
     
-    # 対象画像の特定 (jpg または png)
+    # ---------------------------------------------------------
+    # 画像ファイルの自動探索 (ここを強力にしました)
+    # starphoto で始まるファイルなら、.jpg.jpg でも .jpeg でも何でも拾います
+    # ---------------------------------------------------------
     target_file = None
-    if os.path.exists("starphoto.jpg"):
-        target_file = "starphoto.jpg"
-    elif os.path.exists("starphoto.png"):
-        target_file = "starphoto.png"
-    elif os.path.exists("starphoto.jpeg"):
-        target_file = "starphoto.jpeg"
+    
+    # 'starphoto' で始まるすべてのファイルを探すリスト
+    candidates = glob.glob("starphoto*")
+    
+    # 自分自身(pyファイル)やディレクトリを除外して画像っぽいものを探す
+    for f in candidates:
+        if f.endswith(".py"):
+            continue
+        if os.path.isdir(f):
+            continue
+        target_file = f
+        break
     
     if target_file is None:
-        print("ERROR: starphoto.jpg または starphoto.png が見つかりません。")
+        # 万が一見つからない場合、カレントディレクトリのファイル一覧を表示して終了
+        print("ERROR: 'starphoto' で始まる画像ファイルが見つかりません。")
+        print("現在あるファイル一覧:", os.listdir("."))
         sys.exit(1)
         
     print(f"Target Image Found: {target_file}")
 
     # ---------------------------------------------------------
-    # 1. ログイン処理 (Session IDの取得)
+    # 1. ログイン処理
     # ---------------------------------------------------------
     print("Step 1: Logging in...")
     try:
@@ -66,25 +78,22 @@ def run_analysis():
         sys.exit(1)
 
     # ---------------------------------------------------------
-    # 3. 解析完了待ち (ポーリング)
+    # 3. 解析完了待ち
     # ---------------------------------------------------------
-    print("Step 3: Waiting for processing (this may take time)...")
+    print("Step 3: Waiting for processing...")
     job_id = None
-    max_retries = 30  # 最大待ち回数
+    max_retries = 30
     
     for i in range(max_retries):
-        time.sleep(10) # 10秒ごとに確認
+        time.sleep(10)
         try:
             resp = requests.get(f"{BASE_URL}/submissions/{sub_id}")
             sub_status = resp.json()
-            
-            # jobが入っているか確認
             if sub_status.get('jobs') and len(sub_status['jobs']) > 0:
                 job_id = sub_status['jobs'][0]
                 if job_id:
                     print(f"Job assigned: {job_id}")
                     break
-            
             print(f"Waiting for job assignment... ({i+1}/{max_retries})")
         except Exception as e:
             print(f"Polling Exception: {e}")
@@ -93,7 +102,6 @@ def run_analysis():
         print("Timed out waiting for Job ID.")
         sys.exit(1)
 
-    # Jobのステータス確認
     print("Checking job status...")
     job_done = False
     for i in range(max_retries):
@@ -102,14 +110,12 @@ def run_analysis():
             resp = requests.get(f"{BASE_URL}/jobs/{job_id}")
             job_status = resp.json()
             status_str = job_status.get('status')
-            
             if status_str == 'success':
                 job_done = True
                 break
             elif status_str == 'failure':
-                print("Astrometry analysis failed (could not solve).")
+                print("Astrometry analysis failed.")
                 sys.exit(1)
-            
             print(f"Job processing... Status: {status_str} ({i+1}/{max_retries})")
         except Exception as e:
             print(f"Job Status Exception: {e}")
@@ -119,24 +125,20 @@ def run_analysis():
         sys.exit(1)
 
     # ---------------------------------------------------------
-    # 4. 結果の取得 (Calibration Data)
+    # 4. 結果の取得
     # ---------------------------------------------------------
     print("Step 4: Fetching results...")
     try:
         resp = requests.get(f"{BASE_URL}/jobs/{job_id}/calibration")
         cal_data = resp.json()
-        
         print("\n" + "="*40)
         print("       ANALYSIS RESULT       ")
         print("="*40)
+        print(f"Target File          : {target_file}")
         print(f"Right Ascension (RA) : {cal_data.get('ra')}")
         print(f"Declination (Dec)    : {cal_data.get('dec')}")
         print(f"Radius (deg)         : {cal_data.get('radius')}")
-        print(f"Pixel Scale          : {cal_data.get('pixscale')} arcsec/pixel")
-        print(f"Parity               : {cal_data.get('parity')}")
-        print(f"Orientation          : {cal_data.get('orientation')}")
         print("="*40 + "\n")
-        
     except Exception as e:
         print(f"Result Fetch Exception: {e}")
 
