@@ -79,7 +79,7 @@ def run_analysis():
     # ---------------------------------------------------------
     print("Step 3: Waiting for processing...")
     job_id = None
-    max_retries = 30 # 最大待ち回数
+    max_retries = 30
     
     for i in range(max_retries):
         time.sleep(10)
@@ -122,7 +122,7 @@ def run_analysis():
         sys.exit(1)
 
     # ---------------------------------------------------------
-    # 4. Result & Annotated Image Download
+    # 4. Result & Annotated Image Download (修正済み)
     # ---------------------------------------------------------
     print("Step 4: Fetching results & Annotated Image...")
     try:
@@ -137,10 +137,10 @@ def run_analysis():
         print(f"Declination (Dec)    : {cal_data.get('dec')}")
         print("="*40 + "\n")
 
-        # --- 【ここが新機能】星座線入り画像のダウンロード ---
+        # --- 画像ダウンロードURLを修正しました ---
         print("Downloading Annotated Image (with constellation lines)...")
-        # APIが生成した星座線入り画像(annotated_display)を取得
-        img_url = f"http://nova.astrometry.net/annotated_display/{job_id}"
+        # annotated_display (HTMLページ) ではなく annotated_image (画像本体) を指定
+        img_url = f"http://nova.astrometry.net/annotated_image/{job_id}"
         img_resp = requests.get(img_url)
         
         if img_resp.status_code == 200:
