@@ -3,7 +3,6 @@ import json
 import time
 import os
 import sys
-import glob
 
 def run_analysis():
     # ---------------------------------------------------------
@@ -13,7 +12,7 @@ def run_analysis():
     BASE_URL = "http://nova.astrometry.net/api"
     
     # ---------------------------------------------------------
-    # 画像ファイルの自動探索 (超強力版 - 継続採用)
+    # 画像ファイルの自動探索
     # ---------------------------------------------------------
     print("Searching for image...")
     target_file = None
@@ -29,7 +28,6 @@ def run_analysis():
     
     if target_file is None:
         print("ERROR: Could not find any file containing 'starphoto'.")
-        print("Current files:", all_files)
         sys.exit(1)
         
     print(f"Target Image Found: '{target_file}'")
@@ -39,7 +37,6 @@ def run_analysis():
     # ---------------------------------------------------------
     print("Step 1: Logging in...")
     try:
-        # ログインは成功しているのでそのまま
         resp = requests.post(f"{BASE_URL}/login", data={'request-json': json.dumps({"apikey": API_KEY})})
         result = resp.json()
         if result.get('status') != 'success':
@@ -52,33 +49,27 @@ def run_analysis():
         sys.exit(1)
 
     # ---------------------------------------------------------
-    # 2. Upload (【修正箇所】データをJSON形式に変換して送信)
+    # 2. Upload
     # ---------------------------------------------------------
     print("Step 2: Uploading image...")
     try:
         with open(target_file, 'rb') as f:
-            # ここが重要：APIの仕様に合わせてデータを辞書に入れ、さらにJSON文字列に変換します
             args = {
                 'allow_commercial_use': 'n',
                 'allow_modifications': 'n',
                 'publicly_visible': 'y',
                 'session': session
             }
-            
-            # request-json という名前で送るのがルールです
             upload_data = {'request-json': json.dumps(args)}
-            
             resp = requests.post(f"{BASE_URL}/upload", files={'file': f}, data=upload_data)
         
         upload_result = resp.json()
-        
         if upload_result.get('status') != 'success':
             print(f"Upload Failed: {upload_result}")
             sys.exit(1)
             
         sub_id = upload_result['subid']
         print(f"Upload Success. Submission ID: {sub_id}")
-        
     except Exception as e:
         print(f"Upload Exception: {e}")
         sys.exit(1)
@@ -88,7 +79,7 @@ def run_analysis():
     # ---------------------------------------------------------
     print("Step 3: Waiting for processing...")
     job_id = None
-    max_retries = 30
+    max_retries = 30 # 最大待ち回数
     
     for i in range(max_retries):
         time.sleep(10)
@@ -131,20 +122,35 @@ def run_analysis():
         sys.exit(1)
 
     # ---------------------------------------------------------
-    # 4. Result
+    # 4. Result & Annotated Image Download
     # ---------------------------------------------------------
-    print("Step 4: Fetching results...")
+    print("Step 4: Fetching results & Annotated Image...")
     try:
+        # 座標データの取得
         resp = requests.get(f"{BASE_URL}/jobs/{job_id}/calibration")
         cal_data = resp.json()
+        
         print("\n" + "="*40)
         print("       ANALYSIS RESULT       ")
         print("="*40)
-        print(f"Target File          : {target_file}")
         print(f"Right Ascension (RA) : {cal_data.get('ra')}")
         print(f"Declination (Dec)    : {cal_data.get('dec')}")
-        print(f"Radius (deg)         : {cal_data.get('radius')}")
         print("="*40 + "\n")
+
+        # --- 【ここが新機能】星座線入り画像のダウンロード ---
+        print("Downloading Annotated Image (with constellation lines)...")
+        # APIが生成した星座線入り画像(annotated_display)を取得
+        img_url = f"http://nova.astrometry.net/annotated_display/{job_id}"
+        img_resp = requests.get(img_url)
+        
+        if img_resp.status_code == 200:
+            output_filename = "annotated_result.jpg"
+            with open(output_filename, 'wb') as f:
+                f.write(img_resp.content)
+            print(f"SUCCESS: Saved annotated image to '{output_filename}'")
+        else:
+            print(f"ERROR: Failed to download image. Status code: {img_resp.status_code}")
+
     except Exception as e:
         print(f"Result Fetch Exception: {e}")
 
