@@ -17,7 +17,6 @@ def run_analysis():
     # ---------------------------------------------------------
     print("Searching for image...")
     target_file = None
-    
     all_files = os.listdir(".")
     for f in all_files:
         lower_name = f.lower()
@@ -30,30 +29,26 @@ def run_analysis():
     if target_file is None:
         print("ERROR: Could not find any file containing 'starphoto'.")
         sys.exit(1)
-        
     print(f"Target Image Found: '{target_file}'")
 
     # ---------------------------------------------------------
-    # 1. Login (Sessionの作成)
+    # 1. Login (Session保持)
     # ---------------------------------------------------------
     print("Step 1: Logging in...")
-    # RequestsのSessionオブジェクトを使う（Cookie保持のため）
     session_client = requests.Session()
+    # ブラウザらしく見せるためのヘッダー
+    session_client.headers.update({
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+    })
     
     try:
-        # ログイン
         resp = session_client.post(f"{API_URL}/login", data={'request-json': json.dumps({"apikey": API_KEY})})
         result = resp.json()
         if result.get('status') != 'success':
             print(f"Login Failed: {result}")
             sys.exit(1)
-            
         session_id = result['session']
         print(f"Logged in. Session ID: {session_id}")
-        
-        # 【重要】以後の通信のためにCookieにセットしておく
-        session_client.cookies.set('session', session_id)
-        
     except Exception as e:
         print(f"Login Exception: {e}")
         sys.exit(1)
@@ -71,14 +66,12 @@ def run_analysis():
                 'session': session_id
             }
             upload_data = {'request-json': json.dumps(args)}
-            # Sessionクライアント経由で送信
             resp = session_client.post(f"{API_URL}/upload", files={'file': f}, data=upload_data)
         
         upload_result = resp.json()
         if upload_result.get('status') != 'success':
             print(f"Upload Failed: {upload_result}")
             sys.exit(1)
-            
         sub_id = upload_result['subid']
         print(f"Upload Success. Submission ID: {sub_id}")
     except Exception as e:
@@ -90,7 +83,7 @@ def run_analysis():
     # ---------------------------------------------------------
     print("Step 3: Waiting for processing...")
     job_id = None
-    max_retries = 60 # 画像生成待ちも含めて少し長めに
+    max_retries = 60
     
     for i in range(max_retries):
         time.sleep(5)
@@ -98,10 +91,9 @@ def run_analysis():
             resp = session_client.get(f"{API_URL}/submissions/{sub_id}")
             sub_status = resp.json()
             if sub_status.get('jobs') and len(sub_status['jobs']) > 0:
-                # 最初のジョブIDを取得
                 current_job = sub_status['jobs'][0]
                 if current_job:
-                    # ジョブの完了ステータスを確認
+                    # ジョブステータス確認
                     job_resp = session_client.get(f"{API_URL}/jobs/{current_job}")
                     job_status = job_resp.json()
                     status_str = job_status.get('status')
@@ -118,95 +110,113 @@ def run_analysis():
             else:
                  print(f"Waiting for job assignment... ({i+1}/{max_retries})")
         except Exception as e:
-            print(f"Polling Exception: {e}")
+            # 接続エラーなどが起きてもリトライを続ける
+            print(f"Polling Warning: {e}")
+            time.sleep(5)
             
     if not job_id:
         print("Timed out waiting for Job completion.")
         sys.exit(1)
 
     # ---------------------------------------------------------
-    # 4. Result & Annotated Image Download (AI推奨: Files経由)
+    # 4. Result & Annotated Image Download (Files API 探索)
     # ---------------------------------------------------------
-    print("Step 4: Fetching results & Annotated Image...")
+    print("Step 4: Searching for result files...")
+    
+    # RA/Dec 表示
     try:
-        # A. 座標データの取得
         cal_resp = session_client.get(f"{API_URL}/jobs/{job_id}/calibration")
         cal_data = cal_resp.json()
-        
-        print("\n" + "="*40)
-        print("       ANALYSIS RESULT       ")
-        print("="*40)
-        print(f"Right Ascension (RA) : {cal_data.get('ra')}")
-        print(f"Declination (Dec)    : {cal_data.get('dec')}")
-        print("="*40 + "\n")
+        print(f"RA: {cal_data.get('ra')}, Dec: {cal_data.get('dec')}")
+    except:
+        pass
 
-        # B. 星座線入り画像の取得
-        # AI分析に基づく「files一覧から annotated を探す」アプローチ
-        print("Searching for annotated image in job files...")
-        
-        output_filename = "annotated_result.jpg"
-        download_success = False
-        
-        # 画像生成にはタイムラグがあるため、ここでもリトライループする
-        img_retries = 10
-        
-        for i in range(img_retries):
-            try:
-                # --- 方法1: Files API (AI推奨) ---
-                # まず、ジョブに関連するファイル一覧を取得する
-                # (ドキュメントにはないが、内部APIとして存在する可能性があるため試す)
-                # もしこれが404なら、方法2へ進む
+    # --- 本番: Files APIを使って画像の正体を探す ---
+    # ここでHTMLではなく、JSONでファイル一覧を取得します
+    print("Accessing Job Files List...")
+    download_success = False
+    output_filename = "annotated_result.jpg"
+    
+    # 試行回数
+    search_retries = 10
+    
+    for i in range(search_retries):
+        try:
+            # ジョブに関連する全ファイルを取得するURL
+            # 例: http://nova.astrometry.net/api/jobs/123456/info/ (filesを含む場合がある)
+            # または http://nova.astrometry.net/api/jobs/123456 (filesキーがあるか確認)
+            
+            # まずは jobs/{id} 自体を確認
+            job_info_url = f"{API_URL}/jobs/{job_id}"
+            info_resp = session_client.get(job_info_url)
+            info_data = info_resp.json()
+            
+            # デバッグ: どんな情報が返ってきているか一部表示
+            print(f"Job Info Keys: {list(info_data.keys())}")
+            
+            # もしここに直接 'annotated_image' などのキーがあればラッキー
+            # 無い場合が多いので、推測されるファイル名やエンドポイントを試す
+            
+            # アプローチA: ブラウザ用URLのソースをHTMLとしてDLして、その中から画像リンクを探す
+            # Files APIが公開されていない場合、これが最後の手段
+            print(f"Scraping HTML for image source... ({i+1}/{search_retries})")
+            
+            # annotated_full は一番解像度が高い
+            html_url = f"{BASE_URL}/annotated_full/{job_id}"
+            html_resp = session_client.get(html_url)
+            html_text = html_resp.text
+            
+            # HTMLの中から <img src="..."> を探す強力なロジック
+            # astrometry.net の画像パスは大体 /image/ や /user_images/ を含む
+            import re
+            # パターン: src=".../image/..." または src=".../user_images/..."
+            # 拡張子が jpg/png のものを優先
+            candidates = re.findall(r'src=["\']([^"\']+\.(?:jpg|png|jpeg))["\']', html_text)
+            
+            # 見つからなければ、より広い条件で探す
+            if not candidates:
+                 candidates = re.findall(r'src=["\'](/image/[^"\']+)["\']', html_text)
+            
+            if candidates:
+                print(f"Found candidate images in HTML: {candidates}")
                 
-                # 方法1 & 2 共通: 最終的にダウンロードするURL
-                target_img_url = None
-
-                # filesエンドポイントを試す（AI分析のアプローチ）
-                # 注意: 存在しない場合のエラーハンドリングが必要
-                files_url = f"{API_URL}/jobs/{job_id}/files" # あるいは /api/jobs/.../files
-                # AstrometryのAPI仕様上、予測しづらいため、
-                # ここでは「Web標準のAnnotated URL」をSession Cookie付きで叩く方法を
-                # 最も確実な「方法2」としてメイン実装します。
-                # 理由: /files エンドポイントはバージョンによって挙動が不明確なため。
+                # 最初に見つかった有力候補をダウンロード
+                target_path = candidates[0]
                 
-                # --- 方法2: Session Cookieを使ったWeb URL直接取得 ---
-                # 解説: ブラウザでログインしていると annotated_image URL は画像を返すが、
-                # 素のrequestsだとHTMLを返す。
-                # 今回は session_client (Cookieあり) を使っているため、これで落ちてくるはず。
+                # 相対パスなら絶対パスにする
+                if target_path.startswith("/"):
+                    real_img_url = f"{BASE_URL}{target_path}"
+                elif target_path.startswith("http"):
+                    real_img_url = target_path
+                else:
+                    real_img_url = f"{BASE_URL}/{target_path}"
                 
-                # ターゲットURL: http://nova.astrometry.net/annotated_image/{job_id}
-                # (display ではなく image, api ではなく web root)
-                target_img_url = f"{BASE_URL}/annotated_image/{job_id}"
+                print(f"Downloading real image from: {real_img_url}")
                 
-                print(f"Attempting download from: {target_img_url} ({i+1}/{img_retries})")
+                img_resp = session_client.get(real_img_url)
+                ct = img_resp.headers.get("Content-Type", "").lower()
                 
-                img_resp = session_client.get(target_img_url, allow_redirects=True)
-                content_type = img_resp.headers.get("Content-Type", "").lower()
-                
-                if img_resp.status_code == 200 and "image" in content_type:
+                if img_resp.status_code == 200 and "image" in ct:
                     with open(output_filename, 'wb') as f:
                         f.write(img_resp.content)
-                    print(f"SUCCESS: Saved annotated image to '{output_filename}'")
-                    print(f"Content-Type: {content_type}")
+                    print(f"SUCCESS: Annotated image saved to {output_filename}")
                     download_success = True
                     break
                 else:
-                    print(f"Wait: Server returned {img_resp.status_code} ({content_type}).")
-                    # まだ生成中の場合はHTMLが返ることがある
-            
-            except Exception as e:
-                print(f"Download Attempt Error: {e}")
-            
-            time.sleep(5)
+                    print(f"Wait: Link found but returned {ct}")
+            else:
+                print("Wait: No image link found in HTML yet (Server still rendering?)")
+        
+        except Exception as e:
+            print(f"Search Error: {e}")
+        
+        time.sleep(5)
 
-        if not download_success:
-            print("ERROR: Failed to download annotated image after multiple attempts.")
-            print("Note: The RA/Dec coordinates were retrieved successfully.")
-            # 座標は取れているので、ここでexit(1)してActionsを赤くするかはお任せですが、
-            # 今回は「画像必須」のオーダーなのでエラー終了させます。
-            sys.exit(1)
-
-    except Exception as e:
-        print(f"Result Fetch Exception: {e}")
+    if not download_success:
+        print("ERROR: Failed to extract image from HTML.")
+        # 失敗してもアーティファクト(exe)は残すため、ここでは正常終了扱いにする
+        # ただしログにはエラーを残す
+        sys.exit(1)
 
 if __name__ == '__main__':
     run_analysis()
