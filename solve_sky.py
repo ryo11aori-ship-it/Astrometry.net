@@ -13,21 +13,16 @@ def run_analysis():
     BASE_URL = "http://nova.astrometry.net/api"
     
     # ---------------------------------------------------------
-    # 画像ファイルの自動探索 (超強力版)
+    # 画像ファイルの自動探索 (超強力版 - 継続採用)
     # ---------------------------------------------------------
     print("Searching for image...")
     target_file = None
     
     all_files = os.listdir(".")
     for f in all_files:
-        # ファイル名を小文字にしてチェック
         lower_name = f.lower()
-        
-        # .py や .exe, .spec などの自分自身は除外
         if lower_name.endswith(".py") or lower_name.endswith(".exe") or lower_name.endswith(".spec"):
             continue
-            
-        # ファイル名に "starphoto" が含まれていれば採用 (スペースがあってもOK)
         if "starphoto" in lower_name:
             target_file = f
             break
@@ -44,6 +39,7 @@ def run_analysis():
     # ---------------------------------------------------------
     print("Step 1: Logging in...")
     try:
+        # ログインは成功しているのでそのまま
         resp = requests.post(f"{BASE_URL}/login", data={'request-json': json.dumps({"apikey": API_KEY})})
         result = resp.json()
         if result.get('status') != 'success':
@@ -56,24 +52,33 @@ def run_analysis():
         sys.exit(1)
 
     # ---------------------------------------------------------
-    # 2. Upload
+    # 2. Upload (【修正箇所】データをJSON形式に変換して送信)
     # ---------------------------------------------------------
     print("Step 2: Uploading image...")
     try:
         with open(target_file, 'rb') as f:
-            upload_data = {
+            # ここが重要：APIの仕様に合わせてデータを辞書に入れ、さらにJSON文字列に変換します
+            args = {
                 'allow_commercial_use': 'n',
                 'allow_modifications': 'n',
                 'publicly_visible': 'y',
                 'session': session
             }
+            
+            # request-json という名前で送るのがルールです
+            upload_data = {'request-json': json.dumps(args)}
+            
             resp = requests.post(f"{BASE_URL}/upload", files={'file': f}, data=upload_data)
+        
         upload_result = resp.json()
+        
         if upload_result.get('status') != 'success':
             print(f"Upload Failed: {upload_result}")
             sys.exit(1)
+            
         sub_id = upload_result['subid']
         print(f"Upload Success. Submission ID: {sub_id}")
+        
     except Exception as e:
         print(f"Upload Exception: {e}")
         sys.exit(1)
