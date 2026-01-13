@@ -7,45 +7,37 @@ import glob
 
 def run_analysis():
     # ---------------------------------------------------------
-    # DEBUG: Show current directory and ALL files recursively
-    # ---------------------------------------------------------
-    print("--- DEBUG: START FILE SEARCH ---")
-    cwd = os.getcwd()
-    print(f"Current Working Directory: {cwd}")
-    
-    # リポジトリ内の全ファイルを表示して、画像がどこにあるか暴く
-    print("Listing all files in repository:")
-    for root, dirs, files in os.walk("."):
-        for name in files:
-            print(os.path.join(root, name))
-    print("--- DEBUG: END FILE SEARCH ---")
-
-    # ---------------------------------------------------------
-    # Settings
+    # 設定・定数
     # ---------------------------------------------------------
     API_KEY = "frminzlefpwosbcj"
     BASE_URL = "http://nova.astrometry.net/api"
     
     # ---------------------------------------------------------
-    # Find Image
+    # 画像ファイルの自動探索 (超強力版)
     # ---------------------------------------------------------
+    print("Searching for image...")
     target_file = None
     
-    # Case-insensitive search manually
-    # (glob behavior can vary, so we check manually)
     all_files = os.listdir(".")
     for f in all_files:
+        # ファイル名を小文字にしてチェック
         lower_name = f.lower()
-        if lower_name.startswith("starphoto") and (lower_name.endswith(".jpg") or lower_name.endswith(".png") or lower_name.endswith(".jpeg")):
+        
+        # .py や .exe, .spec などの自分自身は除外
+        if lower_name.endswith(".py") or lower_name.endswith(".exe") or lower_name.endswith(".spec"):
+            continue
+            
+        # ファイル名に "starphoto" が含まれていれば採用 (スペースがあってもOK)
+        if "starphoto" in lower_name:
             target_file = f
             break
     
     if target_file is None:
-        print("ERROR: Could not find any file starting with 'starphoto'.")
-        # Do not use Japanese here to avoid UnicodeEncodeError
+        print("ERROR: Could not find any file containing 'starphoto'.")
+        print("Current files:", all_files)
         sys.exit(1)
         
-    print(f"Target Image Found: {target_file}")
+    print(f"Target Image Found: '{target_file}'")
 
     # ---------------------------------------------------------
     # 1. Login
