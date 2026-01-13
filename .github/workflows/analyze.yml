@@ -24,11 +24,13 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
+        # 描画に必要なライブラリ群
         pip install requests pyinstaller astropy matplotlib scipy numpy
 
     # 4. アプリ(exe)の作成
     - name: Build EXE with PyInstaller
       run: |
+        # numpyなどもhidden-importに追加
         pyinstaller --onefile --clean --hidden-import=astropy --hidden-import=matplotlib --hidden-import=numpy solve_sky.py
 
     # 5. アプリの実行
@@ -44,9 +46,11 @@ jobs:
         name: star-analysis-app
         path: dist/solve_sky.exe
 
-    # 7. 【追加】画像のみ保存
-    - name: Upload Image Artifact
+    # 7. 【変更】2種類の画像を保存
+    - name: Upload Image Artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: star-analysis-image
-        path: annotated_result.jpg
+        name: star-analysis-images
+        path: |
+          result_normalized.jpg
+          result_original_orient.jpg
