@@ -245,7 +245,7 @@ def draw_normalized_orientation(target_file, wcs_filename, const_data):
 # ------------------------------------------------------------------
 def run_analysis():
     print("Searching for image...")
-    target_file = next((f for f in os.listdir(".") if "starphoto" in f.lower() and f.lower().endswith(('.png', '.jpg', '.jpeg'))), None)
+    target_file = next((f for f in os.listdir(".") if "starphoto" in f.lower() and f.lower().endswith(('.png', '.jpg', '.jpeg', '.JPG'))), None)
     if not target_file:
         print("ERROR: 'starphoto' image not found.")
         sys.exit(1)
