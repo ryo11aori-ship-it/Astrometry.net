@@ -1,0 +1,47 @@
+name: Build and Analyze Star Photo
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  workflow_dispatch:
+
+jobs:
+  build-and-run:
+    runs-on: windows-latest
+
+    steps:
+    # 1. コードのチェックアウト
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    # 2. 画像ファイルの存在確認（デバッグ用）
+    - name: Check for starphoto
+      run: |
+        if (Test-Path "starphoto.jpg") { Write-Host "Found starphoto.jpg" }
+        elseif (Test-Path "starphoto.png") { Write-Host "Found starphoto.png" }
+        else { Write-Error "starphoto image not found!" }
+
+    # 3. Python環境のセットアップ
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+
+    # 4. 依存ライブラリのインストール
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install requests pyinstaller
+
+    # 5. Windowsアプリ(exe)の作成
+    - name: Build EXE with PyInstaller
+      run: |
+        # 1つのexeファイルにまとめるオプション(--onefile)を使用
+        pyinstaller --onefile --clean solve_sky.py
+
+    # 6. アプリの実行と結果表示
+    # distフォルダの中にexeが生成されるので、それを入力画像があるルートディレクトリにコピーして実行
+    - name: Run the Star Analysis App
+      run: |
+        Copy-Item dist\solve_sky.exe .
+        .\solve_sky.exe
