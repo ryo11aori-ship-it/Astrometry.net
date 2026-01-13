@@ -32,8 +32,14 @@ jobs:
         pyinstaller --onefile --clean solve_sky.py
 
     # 5. アプリの実行
-    # ここで画像が見つからない場合は、Pythonコード側が「現在あるファイル一覧」を表示して教えてくれます
     - name: Run the Star Analysis App
       run: |
         Copy-Item dist\solve_sky.exe .
         .\solve_sky.exe
+
+    # 6. 【追加】生成されたexeを保存（アーティファクトとしてアップロード）
+    - name: Upload EXE Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: star-analysis-app
+        path: dist/solve_sky.exe
