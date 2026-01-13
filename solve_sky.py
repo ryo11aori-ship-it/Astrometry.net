@@ -109,146 +109,137 @@ def download_file(url, filename, session_client=None):
         print(f"Download Error: {e}")
     return False
 
-def draw_on_original_image(target_file, wcs_filename, const_data):
-    """元画像の向きで、安全に星座線とグリッドを描画する"""
-    print("Drawing on original image orientation...")
+# ------------------------------------------------------------------
+# 画像生成1: 元画像向き (あなたの写真と同じ向き)
+# ------------------------------------------------------------------
+def draw_original_orientation(target_file, wcs_filename, const_data):
+    print("Generating Image 1: Original Orientation...")
     
-    # 1. データ読み込み
     img_data = plt.imread(target_file)
     h, w = img_data.shape[:2]
     wcs = WCS(fits.open(wcs_filename)[0].header)
 
-    # 2. プロット準備
     fig, ax = plt.subplots(figsize=(12, 12))
     ax.imshow(img_data, origin='upper')
 
-    # ---------------------------------------------------------
-    # 【修正箇所1】画像の範囲（四隅）の天球座標を計算し、グリッドの範囲を限定する
-    # ---------------------------------------------------------
-    print(" - Calculating image bounds...")
+    # グリッド描画範囲の計算
     try:
-        # 四隅のピクセル座標 [[0,0], [w,0], [w,h], [0,h]]
         corners_pix = np.array([[0, 0], [w, 0], [w, h], [0, h]])
-        # これを天球座標(RA, Dec)に変換
-        # quiet=True を入れることで、万が一歪みがひどくてもエラーで落ちないようにする
         corners_world = wcs.all_pix2world(corners_pix, 0)
         
         ra_min, ra_max = np.min(corners_world[:, 0]), np.max(corners_world[:, 0])
         dec_min, dec_max = np.min(corners_world[:, 1]), np.max(corners_world[:, 1])
         
-        # 0度/360度の境界をまたぐ場合の簡易補正（範囲が広くなりすぎるのを防ぐ）
-        if ra_max - ra_min > 180:
-            ra_min, ra_max = 0, 360
-        else:
-            # 少し余裕を持たせる
-            ra_min = max(0, ra_min - 10)
-            ra_max = min(360, ra_max + 10)
-            
-        dec_min = max(-90, dec_min - 10)
-        dec_max = min(90, dec_max + 10)
-        
-        print(f"   Bounds: RA[{ra_min:.1f}, {ra_max:.1f}], Dec[{dec_min:.1f}, {dec_max:.1f}]")
-        
-    except Exception as e:
-        print(f"   Warning: Could not calculate bounds ({e}). Using full sky (risky but trying).")
-        ra_min, ra_max = 0, 360
-        dec_min, dec_max = -90, 90
+        if ra_max - ra_min > 180: ra_min, ra_max = 0, 360
+        else: ra_min, ra_max = max(0, ra_min - 10), min(360, ra_max + 10)
+        dec_min, dec_max = max(-90, dec_min - 10), min(90, dec_max + 10)
+    except:
+        ra_min, ra_max, dec_min, dec_max = 0, 360, -90, 90
 
-    # 3. 天球グリッド線の描画
-    print(" - Drawing grid lines...")
-    grid_color = 'white'
-    grid_alpha = 0.2
-    grid_lw = 0.5
+    # 天球グリッド (薄い白線)
+    grid_args = {'color': 'white', 'alpha': 0.2, 'lw': 0.5}
     
-    # RA線 (範囲を限定してループ)
-    # stepは15度刻み
     start_ra = int(ra_min / 15) * 15
     end_ra = int(ra_max / 15) * 15 + 15
-    
     for ra in range(start_ra, end_ra + 1, 15):
         if ra > 360: continue
-        # Dec方向の点は細かく
         decs = np.linspace(dec_min, dec_max, 100)
         ras = np.full_like(decs, ra)
-        
-        # 変換実行 (quiet=Trueでエラー回避)
         try:
-            pix_coords = wcs.all_world2pix(np.stack([ras, decs], axis=1), 0, quiet=True)
-            # 正常な値（NaNでない、かつ画像の範囲内付近）のみプロット
-            mask = ~np.isnan(pix_coords[:, 0]) & (pix_coords[:, 0] > -w) & (pix_coords[:, 0] < 2*w)
-            if np.any(mask):
-                ax.plot(pix_coords[mask, 0], pix_coords[mask, 1], color=grid_color, alpha=grid_alpha, lw=grid_lw)
-        except:
-            pass # 計算できない線は無視
+            pix = wcs.all_world2pix(np.stack([ras, decs], axis=1), 0, quiet=True)
+            mask = ~np.isnan(pix[:, 0]) & (pix[:, 0] > -w) & (pix[:, 0] < 2*w)
+            if np.any(mask): ax.plot(pix[mask, 0], pix[mask, 1], **grid_args)
+        except: pass
 
-    # Dec線
     start_dec = int(dec_min / 10) * 10
     end_dec = int(dec_max / 10) * 10 + 10
-    
     for dec in range(start_dec, end_dec + 1, 10):
         if dec > 90: continue
         ras = np.linspace(ra_min, ra_max, 100)
         decs_arr = np.full_like(ras, dec)
-        
         try:
-            pix_coords = wcs.all_world2pix(np.stack([ras, decs_arr], axis=1), 0, quiet=True)
-            mask = ~np.isnan(pix_coords[:, 0]) & (pix_coords[:, 0] > -w) & (pix_coords[:, 0] < 2*w)
-            if np.any(mask):
-                ax.plot(pix_coords[mask, 0], pix_coords[mask, 1], color=grid_color, alpha=grid_alpha, lw=grid_lw)
-        except:
-            pass
+            pix = wcs.all_world2pix(np.stack([ras, decs_arr], axis=1), 0, quiet=True)
+            mask = ~np.isnan(pix[:, 0]) & (pix[:, 0] > -w) & (pix[:, 0] < 2*w)
+            if np.any(mask): ax.plot(pix[mask, 0], pix[mask, 1], **grid_args)
+        except: pass
 
-    # 4. 星座線の描画
-    print(" - Drawing constellation lines...")
+    # 星座線 (シアン色)
     line_count = 0
     for feature in const_data['features']:
         if feature['geometry']['type'] == 'MultiLineString':
             for line in feature['geometry']['coordinates']:
-                line_array = np.array(line) # [[RA, Dec], ...]
-                
-                # 簡易チェック：線の座標が画面範囲外ならスキップ（高速化）
-                l_ra_min, l_ra_max = np.min(line_array[:, 0]), np.max(line_array[:, 0])
-                l_dec_min, l_dec_max = np.min(line_array[:, 1]), np.max(line_array[:, 1])
-                
-                # 範囲外判定
-                if (l_dec_max < dec_min) or (l_dec_min > dec_max):
-                    continue
-                # RAは0/360境界があるため単純比較しにくいが、Decチェックだけでもかなり効く
-                
+                line_arr = np.array(line)
+                # 範囲外の簡易スキップ
+                if (np.max(line_arr[:,1]) < dec_min) or (np.min(line_arr[:,1]) > dec_max): continue
                 try:
-                    # 変換 (quiet=True)
-                    pix_coords = wcs.all_world2pix(line_array, 0, quiet=True)
-                    
-                    # すべてNaNならスキップ
-                    if np.all(np.isnan(pix_coords)):
-                        continue
-                        
-                    # 少なくとも一部が画面内(または画面近く)にあるかチェック
-                    visible_mask = (pix_coords[:, 0] > -w*0.5) & (pix_coords[:, 0] < w*1.5) & \
-                                   (pix_coords[:, 1] > -h*0.5) & (pix_coords[:, 1] < h*1.5)
-                    
-                    if np.any(visible_mask):
-                        ax.plot(pix_coords[:, 0], pix_coords[:, 1], 
-                                color='cyan', linewidth=1.5, alpha=0.8)
+                    pix = wcs.all_world2pix(line_arr, 0, quiet=True)
+                    if np.all(np.isnan(pix)): continue
+                    mask = (pix[:, 0] > -w*0.5) & (pix[:, 0] < w*1.5) & (pix[:, 1] > -h*0.5) & (pix[:, 1] < h*1.5)
+                    if np.any(mask):
+                        ax.plot(pix[:, 0], pix[:, 1], color='cyan', lw=1.5, alpha=0.8)
                         line_count += 1
-                except:
-                    continue
-                    
+                except: pass
+    
     print(f"   Drew {line_count} segments.")
-
-    # 5. 表示範囲設定
     ax.set_xlim(0, w)
     ax.set_ylim(h, 0)
     ax.axis('off')
-
-    # 6. 保存
-    output_filename = "result_original_orient.jpg"
-    plt.savefig(output_filename, dpi=150, bbox_inches='tight', pad_inches=0)
-    print(f"SUCCESS: Generated '{output_filename}'")
+    
+    out_file = "result_original_orient.jpg"
+    plt.savefig(out_file, dpi=150, bbox_inches='tight', pad_inches=0)
+    print(f"SUCCESS: Generated '{out_file}'")
     plt.close(fig)
 
+# ------------------------------------------------------------------
+# 画像生成2: 天球向き (北が上になる、以前あなたが目にした画像)
+# ------------------------------------------------------------------
+def draw_normalized_orientation(target_file, wcs_filename, const_data):
+    print("Generating Image 2: Normalized (Sky) Orientation...")
+    
+    img_data = plt.imread(target_file)
+    wcs = WCS(fits.open(wcs_filename)[0].header)
+
+    # WCSプロジェクションを使って描画（これが自動的に画像を回転・変形させて天球に合わせる）
+    fig = plt.figure(figsize=(12, 12))
+    ax = plt.subplot(projection=wcs)
+    
+    # 画像を表示
+    ax.imshow(img_data)
+    
+    # グリッド線
+    ax.coords.grid(True, color='white', ls='dotted', alpha=0.3)
+    
+    # 星座線
+    for feature in const_data['features']:
+        if feature['geometry']['type'] == 'MultiLineString':
+            for line in feature['geometry']['coordinates']:
+                line_arr = np.array(line)
+                ra = line_arr[:, 0]
+                dec = line_arr[:, 1]
+                # transform=ax.get_transform('world') がポイント
+                # これによりRA/Dec座標をそのまま渡せる
+                try:
+                    ax.plot(ra, dec, transform=ax.get_transform('world'), 
+                            color='cyan', lw=1.5, alpha=0.8)
+                except: pass
+
+    # ラベルを消す
+    lon = ax.coords[0]
+    lat = ax.coords[1]
+    lon.set_ticklabel_visible(False)
+    lon.set_axislabel('')
+    lat.set_ticklabel_visible(False)
+    lat.set_axislabel('')
+
+    out_file = "result_normalized.jpg"
+    plt.savefig(out_file, dpi=150, bbox_inches='tight', pad_inches=0.05)
+    print(f"SUCCESS: Generated '{out_file}'")
+    plt.close(fig)
+
+# ------------------------------------------------------------------
+# メイン処理
+# ------------------------------------------------------------------
 def run_analysis():
-    # 画像探索
     print("Searching for image...")
     target_file = next((f for f in os.listdir(".") if "starphoto" in f.lower() and f.lower().endswith(('.png', '.jpg', '.jpeg'))), None)
     if not target_file:
@@ -256,7 +247,6 @@ def run_analysis():
         sys.exit(1)
     print(f"Target Image Found: '{target_file}'")
 
-    # APIクライアント準備
     session_client = requests.Session()
     session_client.headers.update({'User-Agent': 'Mozilla/5.0 (Python script)'})
 
@@ -265,16 +255,21 @@ def run_analysis():
     job_id = wait_for_job(session_client, sub_id)
 
     print("Step 4: Fetching Data & Drawing...")
-
-    norm_img_url = f"{BASE_URL}/annotated_image/{job_id}"
-    download_file(norm_img_url, "result_normalized.jpg", session_client)
-
+    
+    # WCSファイルダウンロード
     wcs_filename = "wcs.fits"
     if not download_file(f"{BASE_URL}/wcs_file/{job_id}", wcs_filename):
         sys.exit(1)
 
+    # 星座データダウンロード
     const_data = requests.get(CONSTELLATION_JSON_URL).json()
-    draw_on_original_image(target_file, wcs_filename, const_data)
+
+    # --- 2種類の画像を自前で生成する ---
+    # 1. 元画像と同じ向き
+    draw_original_orientation(target_file, wcs_filename, const_data)
+    
+    # 2. 天球向き（北が上）
+    draw_normalized_orientation(target_file, wcs_filename, const_data)
 
 if __name__ == '__main__':
     run_analysis()
