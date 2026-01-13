@@ -79,7 +79,7 @@ def run_analysis():
     # ---------------------------------------------------------
     print("Step 3: Waiting for processing...")
     job_id = None
-    max_retries = 30
+    max_retries = 40 # 待ち時間を少し延長
     
     for i in range(max_retries):
         time.sleep(10)
@@ -122,7 +122,7 @@ def run_analysis():
         sys.exit(1)
 
     # ---------------------------------------------------------
-    # 4. Result & Annotated Image Download (修正済み)
+    # 4. Result & Annotated Image Download (安全対策強化版)
     # ---------------------------------------------------------
     print("Step 4: Fetching results & Annotated Image...")
     try:
@@ -137,20 +137,34 @@ def run_analysis():
         print(f"Declination (Dec)    : {cal_data.get('dec')}")
         print("="*40 + "\n")
 
-        # --- 画像ダウンロードURLを修正しました ---
-        print("Downloading Annotated Image (with constellation lines)...")
-        # annotated_display (HTMLページ) ではなく annotated_image (画像本体) を指定
-        img_url = f"http://nova.astrometry.net/annotated_image/{job_id}"
-        img_resp = requests.get(img_url)
+        # --- 画像ダウンロード処理 ---
+        print("Downloading Annotated Image (Safe Mode)...")
         
-        if img_resp.status_code == 200:
+        # 'annotated_full' はフルサイズ画像の正規エンドポイントです
+        # ここからリダイレクトされて実際の画像(JPGなど)に飛びます
+        img_url = f"http://nova.astrometry.net/annotated_full/{job_id}"
+        
+        # allow_redirects=True でリダイレクトを許可
+        img_resp = requests.get(img_url, allow_redirects=True)
+        
+        # 【重要】Content-Typeを確認する
+        content_type = img_resp.headers.get("Content-Type", "").lower()
+        print(f"DEBUG: Response Content-Type: {content_type}")
+        
+        if img_resp.status_code == 200 and "image" in content_type:
+            # 画像として正しい場合のみ保存
             output_filename = "annotated_result.jpg"
             with open(output_filename, 'wb') as f:
                 f.write(img_resp.content)
             print(f"SUCCESS: Saved annotated image to '{output_filename}'")
         else:
-            print(f"ERROR: Failed to download image. Status code: {img_resp.status_code}")
-
+            # 画像じゃなかった場合、エラーを表示して中身の一部をログに出す（デバッグ用）
+            print("ERROR: The response was NOT an image.")
+            print(f"Status Code: {img_resp.status_code}")
+            print(f"Content Start: {img_resp.text[:200]}") # 冒頭200文字を表示
+            # ここでexitしないと、壊れたファイルをアーティファクトとして上げようとしてしまう
+            # ただし、座標データは取れているのでexitせずに進む手もあるが、今回はエラーを明確にする
+            
     except Exception as e:
         print(f"Result Fetch Exception: {e}")
 
