@@ -14,27 +14,12 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4
 
-    # === 【追加】 デバッグ：全ファイルとディレクトリ構造を表示 ===
-    # これでファイル名が微妙に違うのか、場所が違うのかが確定します
-    - name: DEBUG - List ALL Files
-      run: |
-        Write-Host "--- Current Directory Content ---"
-        Get-ChildItem -Recurse | Select-Object FullName, Length
-        Write-Host "---------------------------------"
-        
-        Write-Host "--- Searching for any JPG/PNG ---"
-        Get-ChildItem -Recurse -Include *.jpg,*.jpeg,*.png
-        Write-Host "---------------------------------"
-
-    # 2. 画像ファイルの存在確認
+    # 2. 画像ファイルの存在確認（デバッグ用）
     - name: Check for starphoto
       run: |
-        $img = Get-ChildItem -Filter "starphoto.*" -Recurse
-        if ($img) {
-            Write-Host "Found image at: $($img.FullName)"
-        } else {
-            Write-Error "CRITICAL: starphoto image is strictly NOT found in $PWD"
-        }
+        if (Test-Path "starphoto.jpg") { Write-Host "Found starphoto.jpg" }
+        elseif (Test-Path "starphoto.png") { Write-Host "Found starphoto.png" }
+        else { Write-Error "starphoto image not found!" }
 
     # 3. Python環境のセットアップ
     - name: Set up Python
@@ -51,9 +36,11 @@ jobs:
     # 5. Windowsアプリ(exe)の作成
     - name: Build EXE with PyInstaller
       run: |
+        # 1つのexeファイルにまとめるオプション(--onefile)を使用
         pyinstaller --onefile --clean solve_sky.py
 
     # 6. アプリの実行と結果表示
+    # distフォルダの中にexeが生成されるので、それを入力画像があるルートディレクトリにコピーして実行
     - name: Run the Star Analysis App
       run: |
         Copy-Item dist\solve_sky.exe .
