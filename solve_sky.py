@@ -13,7 +13,6 @@ ASTROMETRY_API = "http://nova.astrometry.net/api"
 # =========================
 # Utility
 # =========================
-
 def log(msg):
     print(msg, flush=True)
 
@@ -55,11 +54,7 @@ def main():
 
     log(f"Target image: {image_file}")
 
-    # API Key
-    api_key = os.environ.get("ASTROMETRY_API_KEY")
-    if not api_key:
-        log("ASTROMETRY_API_KEY not set.")
-        sys.exit(1)
+    api_key = "frminzlefpwosbcj"
 
     # Step 1: Login
     log("Step 1: Logging in...")
