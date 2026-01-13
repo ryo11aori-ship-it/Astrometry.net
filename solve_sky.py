@@ -3,18 +3,14 @@ import json
 import time
 import os
 import sys
-import glob
-import re  # 追加：HTMLからリンクを探すための正規表現ライブラリ
 
 def run_analysis():
     # ---------------------------------------------------------
     # 設定・定数
     # ---------------------------------------------------------
     API_KEY = "frminzlefpwosbcj"
-    # API用URL
-    API_URL = "http://nova.astrometry.net/api"
-    # Webサイト用URL (画像の取得などに使用)
-    WEB_URL = "http://nova.astrometry.net"
+    # 基本URL
+    BASE_URL = "http://nova.astrometry.net/api"
     
     # ---------------------------------------------------------
     # 画像ファイルの自動探索
@@ -42,7 +38,7 @@ def run_analysis():
     # ---------------------------------------------------------
     print("Step 1: Logging in...")
     try:
-        resp = requests.post(f"{API_URL}/login", data={'request-json': json.dumps({"apikey": API_KEY})})
+        resp = requests.post(f"{BASE_URL}/login", data={'request-json': json.dumps({"apikey": API_KEY})})
         result = resp.json()
         if result.get('status') != 'success':
             print(f"Login Failed: {result}")
@@ -66,7 +62,7 @@ def run_analysis():
                 'session': session
             }
             upload_data = {'request-json': json.dumps(args)}
-            resp = requests.post(f"{API_URL}/upload", files={'file': f}, data=upload_data)
+            resp = requests.post(f"{BASE_URL}/upload", files={'file': f}, data=upload_data)
         
         upload_result = resp.json()
         if upload_result.get('status') != 'success':
@@ -89,7 +85,7 @@ def run_analysis():
     for i in range(max_retries):
         time.sleep(10)
         try:
-            resp = requests.get(f"{API_URL}/submissions/{sub_id}")
+            resp = requests.get(f"{BASE_URL}/submissions/{sub_id}")
             sub_status = resp.json()
             if sub_status.get('jobs') and len(sub_status['jobs']) > 0:
                 job_id = sub_status['jobs'][0]
@@ -109,7 +105,7 @@ def run_analysis():
     for i in range(max_retries):
         time.sleep(5)
         try:
-            resp = requests.get(f"{API_URL}/jobs/{job_id}")
+            resp = requests.get(f"{BASE_URL}/jobs/{job_id}")
             job_status = resp.json()
             status_str = job_status.get('status')
             if status_str == 'success':
@@ -127,12 +123,12 @@ def run_analysis():
         sys.exit(1)
 
     # ---------------------------------------------------------
-    # 4. Result & Annotated Image Download (スクレイピング方式)
+    # 4. Result & Annotated Image Download (API直叩き方式)
     # ---------------------------------------------------------
     print("Step 4: Fetching results & Annotated Image...")
     try:
         # 座標データの取得
-        resp = requests.get(f"{API_URL}/jobs/{job_id}/calibration")
+        resp = requests.get(f"{BASE_URL}/jobs/{job_id}/calibration")
         cal_data = resp.json()
         
         print("\n" + "="*40)
@@ -142,57 +138,39 @@ def run_analysis():
         print(f"Declination (Dec)    : {cal_data.get('dec')}")
         print("="*40 + "\n")
 
-        # --- 画像ダウンロード処理 (スクレイピングロジック) ---
-        print("Downloading Annotated Image (HTML Parsing Mode)...")
+        # --- 【修正箇所】API経由で注釈付き画像を直接取得 ---
+        # 以前のようなWebページ(HTML)経由ではなく、データAPIを叩きます
+        print("Downloading Annotated Image (API Mode)...")
         
-        # 画像生成には解析完了後少し時間がかかる場合があるため、リトライループに入れる
-        image_saved = False
-        img_retries = 10 # 5秒 x 10回 = 最大50秒待つ
+        # Astrometry.net APIエンドポイント: /api/jobs/{id}/annotated
+        annotated_url = f"{BASE_URL}/jobs/{job_id}/annotated"
+        
+        # 念のためリトライループに入れる（生成直後だと404になる可能性があるため）
+        img_retries = 5
+        download_success = False
         
         for i in range(img_retries):
-            try:
-                # 1. まず表示ページ(HTML)を取りに行く
-                # URL例: http://nova.astrometry.net/annotated_display/12345
-                display_url = f"{WEB_URL}/annotated_display/{job_id}"
-                print(f"Accessing display page: {display_url} ({i+1}/{img_retries})")
-                
-                page_resp = requests.get(display_url)
-                
-                # 2. HTMLの中から <img src="..."> を探す
-                # 探すパターン: src="/annotated_image/..." のような記述
-                match = re.search(r'src="(/annotated_image/[^"]+)"', page_resp.text)
-                
-                if match:
-                    # 見つかったパス (例: /annotated_image/12345)
-                    rel_path = match.group(1)
-                    real_img_url = f"{WEB_URL}{rel_path}"
-                    print(f"Found real image URL: {real_img_url}")
-                    
-                    # 3. 本物のURLをダウンロードする
-                    img_resp = requests.get(real_img_url, allow_redirects=True)
-                    content_type = img_resp.headers.get("Content-Type", "").lower()
-                    
-                    if img_resp.status_code == 200 and "image" in content_type:
-                        output_filename = "annotated_result.jpg"
-                        with open(output_filename, 'wb') as f:
-                            f.write(img_resp.content)
-                        print(f"SUCCESS: Saved annotated image to '{output_filename}'")
-                        image_saved = True
-                        break # 成功したのでループを抜ける
-                    else:
-                        print(f"Wait: URL found but content was {content_type}")
-                else:
-                    print("Wait: Image link not found in HTML yet.")
-                
-            except Exception as e:
-                print(f"Download warning: {e}")
+            # 画像取得リクエスト
+            img_resp = requests.get(annotated_url)
+            content_type = img_resp.headers.get("Content-Type", "").lower()
             
-            # まだ画像がない、またはHTMLだった場合は少し待って再試行
-            time.sleep(5)
-            
-        if not image_saved:
-            print("ERROR: Failed to download image after multiple attempts.")
-            # 画像は諦めるが、座標データは取れているのでexit(1)にはしない
+            # ステータス200 かつ 画像形式(image/...) なら成功とみなす
+            if img_resp.status_code == 200 and "image" in content_type:
+                # ファイル名は jpg に統一して保存
+                output_filename = "annotated_result.jpg"
+                with open(output_filename, 'wb') as f:
+                    f.write(img_resp.content)
+                print(f"SUCCESS: Saved annotated image to '{output_filename}' (Content-Type: {content_type})")
+                download_success = True
+                break
+            else:
+                print(f"Wait: API returned {img_resp.status_code} ({content_type})... ({i+1}/{img_retries})")
+                time.sleep(5)
+                
+        if not download_success:
+            print("ERROR: Failed to retrieve annotated image from API.")
+            print(f"Last status: {img_resp.status_code}")
+            print(f"Last content sample: {img_resp.text[:200]}")
 
     except Exception as e:
         print(f"Result Fetch Exception: {e}")
