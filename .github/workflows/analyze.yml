@@ -20,18 +20,18 @@ jobs:
       with:
         python-version: '3.11'
 
-    # 3. 必要なツールのインストール (描画用ライブラリを追加)
+    # 3. 必要なツールのインストール
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        # astropyとmatplotlibを追加（これで自前で線が引けます）
-        pip install requests pyinstaller astropy matplotlib scipy
+        # 描画に必要なライブラリ群
+        pip install requests pyinstaller astropy matplotlib scipy numpy
 
     # 4. アプリ(exe)の作成
-    # --hidden-import でライブラリを明示的に含めます
     - name: Build EXE with PyInstaller
       run: |
-        pyinstaller --onefile --clean --hidden-import=astropy --hidden-import=matplotlib solve_sky.py
+        # numpyなどもhidden-importに追加しておくと安全です
+        pyinstaller --onefile --clean --hidden-import=astropy --hidden-import=matplotlib --hidden-import=numpy solve_sky.py
 
     # 5. アプリの実行
     - name: Run the Star Analysis App
